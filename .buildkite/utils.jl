@@ -45,8 +45,6 @@ env(NAME, PROJECT) = Dict(
     "NAME" => NAME,
     "PROJECT" => PROJECT,
     "YGGDRASIL" => "true",
-    # Inherit the secret so that we can decrypt cryptic secrets
-    "BUILDKITE_PLUGIN_CRYPTIC_BASE64_SIGNED_JOB_ID_SECRET" => get(ENV, "BUILDKITE_PLUGIN_CRYPTIC_BASE64_SIGNED_JOB_ID_SECRET", ""),
 )
 
 safe_name(fn::AbstractString) = replace(fn, r"[^A-Za-z0-9_\-:]"=>"-")
@@ -61,12 +59,7 @@ function build_step(NAME, PLATFORM, PROJECT)
 
     build_plugins = plugins()
     push!(build_plugins,
-        "staticfloat/cryptic#v2" => Dict(
-            "variables" => [
-                "AWS_SECRET_ACCESS_KEY=\"U2FsdGVkX1846b0BRbZjwIWSFV+Fiv1C/Hds/vB3aTkxubHPnRP6lVxGkAkOcFuvAntkoLF6J64QrOHWvjz8xg==\"",
-            ]
-        ),
-        "staticfloat/coppermind#v2" => Dict(
+        "JuliaCI/coppermind#v2" => Dict(
             "inputs" => [
                 PROJECT,
                 ".ci/",
@@ -94,30 +87,25 @@ function build_step(NAME, PLATFORM, PROJECT)
         :plugins => build_plugins,
         :timeout_in_minutes => 240,
         :priority => -1,
-        # Reduce concurrency for Reactant builds, which are extremely intensive and grind
-        # the system to a halt when run with several parallel jobs.
-        :concurrency => NAME == "Reactant" ? 8 : 12,
+        :concurrency => 12,
         :concurrency_group => "yggdrasil/build/$NAME", # Could use ENV["BUILDKITE_JOB_ID"]
         :commands => [script],
         :env => build_env,
         :artifacts => [
             "**/products/$NAME*.tar.*"
+        ],
+        :secrets => [
+            "AWS_SECRET_ACCESS_KEY"
         ]
     )
 end
 
 function register_step(NAME, PROJECT, SKIP_BUILD, NUM_PLATFORMS)
     script = raw"""
-    BUILDKITE_PLUGIN_CRYPTIC_BASE64_SIGNED_JOB_ID_SECRET="" .buildkite/register.sh
+    .buildkite/register.sh
     """
 
     register_plugins = plugins()
-    push!(register_plugins,
-        "staticfloat/cryptic#v2" => Dict(
-            "variables" => [
-                "GITHUB_TOKEN=\"U2FsdGVkX19pZyo9s0+7a8o2ShJ7rk9iDq/27GGmg+tg692sK0ezyqzVDmVfjtUd+NGfVbh+z+Bk3UWf8xwM8Q==\"",
-            ]
-	  ))
 
     register_env = env(NAME, PROJECT)
     if SKIP_BUILD
@@ -140,6 +128,9 @@ function register_step(NAME, PROJECT, SKIP_BUILD, NUM_PLATFORMS)
         :concurrency => 1,
         :concurrency_group => "yggdrasil/register",
         :commands => [script],
-	:env => register_env
+        :secrets => [
+            "GITHUB_TOKEN",
+        ],
+        :env => register_env
     )
 end

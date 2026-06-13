@@ -59,9 +59,7 @@ if PROJECT ∈ EXCLUDED_NAMES
     exit()
 end
 
-# Remove secret from environment
-sanitize(cmd) = addenv(cmd, Dict("BUILDKITE_PLUGIN_CRYPTIC_BASE64_SIGNED_JOB_ID_SECRET" => nothing))
-exec(cmd) = @assert success(pipeline(sanitize(cmd), stderr=stderr, stdout=stdout))
+exec(cmd) = @assert success(pipeline(cmd, stderr=stderr, stdout=stdout))
 
 YGGDRASIL_BASE = dirname(@__DIR__)
 julia(args) = `$(Base.julia_cmd()) --project=$(YGGDRASIL_BASE)/.ci $args`
