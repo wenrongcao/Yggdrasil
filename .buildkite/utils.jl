@@ -59,6 +59,9 @@ function build_step(NAME, PLATFORM, PROJECT)
 
     build_plugins = plugins()
     push!(build_plugins,
+        "aws-assume-role-with-web-identity#v1.6.0" => Dict(
+            "role-arn" => "arn:aws:iam::AWS-ACCOUNT-ID:role/SOME-ROLE"
+        ),
         "JuliaCI/coppermind#v2" => Dict(
             "inputs" => [
                 PROJECT,
@@ -76,7 +79,6 @@ function build_step(NAME, PLATFORM, PROJECT)
         "BINARYBUILDER_STORAGE_DIR" => "/cache/yggdrasil",
         "BINARYBUILDER_CCACHE_DIR" => "/sharedcache/ccache",
         "BINARYBUILDER_NPROC" => "16", # Limit parallelism somewhat to avoid OOM for LLVM
-        "AWS_ACCESS_KEY_ID" => "AKIA4WZGSTHCB2YWWN46",
         "AWS_DEFAULT_REGION" => "us-east-1",
     ))
 
@@ -94,9 +96,6 @@ function build_step(NAME, PLATFORM, PROJECT)
         :artifacts => [
             "**/products/$NAME*.tar.*"
         ],
-        :secrets => [
-            "AWS_SECRET_ACCESS_KEY"
-        ]
     )
 end
 
