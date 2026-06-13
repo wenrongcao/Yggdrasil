@@ -3,7 +3,6 @@
 set -e
 
 # Clear secrets from environment
-export AWS_SECRET_ACCESS_KEY=""
 
 export JULIA_PROJECT="${BUILDKITE_BUILD_CHECKOUT_PATH}/.ci"
 
