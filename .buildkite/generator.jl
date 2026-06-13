@@ -122,7 +122,7 @@ else
 end
 if !IS_PR
     push!(STEPS, wait_step())
-    push!(STEPS, register_step(NAME, PROJECT, SKIP_BUILD, length(PLATFORMS)))
+    push!(STEPS, trigger_registration_step(NAME, PROJECT, SKIP_BUILD, length(PLATFORMS)))
 end
 if !isempty(STEPS)
     definition = Dict(

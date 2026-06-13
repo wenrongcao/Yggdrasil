@@ -66,7 +66,7 @@ function build_step(NAME, PLATFORM, PROJECT)
             "inputs" => [
                 PROJECT,
                 ".ci/",
-                # ?meta.json
+                "platforms",
             ],
             "s3_prefix" => "s3://julia-bb-buildcache/"
         ),
@@ -99,14 +99,11 @@ function build_step(NAME, PLATFORM, PROJECT)
     )
 end
 
-function register_step(NAME, PROJECT, SKIP_BUILD, NUM_PLATFORMS)
-    script = raw"""
-    .buildkite/register.sh
-    """
-
-    register_plugins = plugins()
-
+function trigger_registration_step(NAME, PROJECT, SKIP_BUILD, NUM_PLATFORMS)
     register_env = env(NAME, PROJECT)
+    # Hand the triggering build's ID to the register pipeline so it can pull the
+    # freshly-built tarballs as artifacts from the build that produced them.
+    register_env["BUILD_ID"] = get(ENV, "BUILDKITE_BUILD_ID", "")
     if SKIP_BUILD
         register_env["SKIP_BUILD"] = "true"
     end
@@ -119,17 +116,20 @@ function register_step(NAME, PROJECT, SKIP_BUILD, NUM_PLATFORMS)
         register_env["BINARYBUILDER_GHR_CONCURRENCY"] = string(concurrency)
     end
 
+    # Registration needs the `GITHUB_TOKEN` Buildkite secret, which is only
+    # readable from the dedicated `yggdrasil-register` pipeline.  Keeping it out
+    # of the build steps (which run potentially untrusted `build_tarballs.jl`
+    # code) is the whole point of the split, so rather than registering inline we
+    # trigger the `yggdrasil-register` pipeline and hand it everything it needs.
     Dict(
-        :label => "register -- $NAME",
-        :agents => agent(),
-        :plugins => register_plugins,
-        :timeout_in_minutes => 90,
-        :concurrency => 1,
-        :concurrency_group => "yggdrasil/register",
-        :commands => [script],
-        :secrets => [
-            "GITHUB_TOKEN",
-        ],
-        :env => register_env
+        :label => "trigger registration -- $NAME",
+        :trigger => "yggdrasil-register",
+        :build => Dict(
+            :message => "Register $NAME",
+            :commit => ENV["BUILDKITE_COMMIT"],
+            :branch => ENV["BUILDKITE_BRANCH"],
+            :env => register_env,
+        ),
+        :async => false, # Wait for the registration to finish
     )
 end
