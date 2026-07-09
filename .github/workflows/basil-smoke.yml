@@ -80,3 +80,39 @@ jobs:
           test -s FD.sols/INn3A0 || { echo "no solution file produced"; exit 1; }
           grep -q "Job finished" FD.out/INn3A0.out || { echo "run did not finish cleanly"; exit 1; }
           echo "smoke test passed"
+
+  # Compile-only check for the targets this runner cannot execute. The point is
+  # the -lstdc++ vs -lc++ split in the recipe: Darwin and FreeBSD use clang+libc++,
+  # and that code path is never exercised by the Linux job above.
+  cross-compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        triplet:
+          - x86_64-apple-darwin-libgfortran5
+          - aarch64-apple-darwin-libgfortran5
+          - x86_64-unknown-freebsd-libgfortran5
+          - x86_64-linux-musl-libgfortran5-cxx11
+          - aarch64-linux-gnu-libgfortran5-cxx11
+          - riscv64-linux-gnu-libgfortran5-cxx11
+    env:
+      # Non-interactively accept the macOS SDK license; without this the Darwin
+      # builds block on a prompt and fail.
+      BINARYBUILDER_AUTOMATIC_APPLE: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+      - name: Install BinaryBuilder
+        run: julia -e 'using Pkg; Pkg.add("BinaryBuilder")'
+      - name: Build ${{ matrix.triplet }}
+        working-directory: B/basil
+        run: julia --color=yes build_tarballs.jl --verbose ${{ matrix.triplet }}
+      - name: Confirm product tarball exists
+        working-directory: B/basil
+        run: ls -l products/basil.v*.tar.gz
