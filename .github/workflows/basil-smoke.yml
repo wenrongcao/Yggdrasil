@@ -96,7 +96,14 @@ jobs:
           - x86_64-unknown-freebsd-libgfortran5
           - x86_64-linux-musl-libgfortran5-cxx11
           - aarch64-linux-gnu-libgfortran5-cxx11
-          - riscv64-linux-gnu-libgfortran5-cxx11
+          # riscv64 is omitted deliberately: Julia 1.10's Base.BinaryPlatforms
+          # cannot parse a riscv64 triplet passed on the command line
+          # ("Key \"arch\" cannot have value \"riscv64\""), so this job fails
+          # before reaching a compiler. Yggdrasil's own CI builds every platform
+          # without naming triplets, on a newer Julia, so it covers riscv64.
+          # aarch64-apple-darwin (which has no GCC 8 shard and so builds with a
+          # much newer GCC) already demonstrates the Fortran survives modern
+          # gfortran, which was the reason riscv64 was in this list.
     env:
       # Non-interactively accept the macOS SDK license; without this the Darwin
       # builds block on a prompt and fail.
