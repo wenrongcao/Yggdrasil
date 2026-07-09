@@ -1,0 +1,82 @@
+# Throwaway workflow: lives ONLY on the basil-jll-ci branch.
+# It must never appear in a PR to JuliaPackaging/Yggdrasil.
+#
+# Yggdrasil's own CI cross-compiles every target and never executes a target
+# binary, so it can hand you a green check on a solver nobody has ever run.
+# This workflow closes that gap for the target that matters most: it builds
+# x86_64-linux-gnu, unpacks the tarball, and actually runs the indenter case.
+name: basil JLL smoke test
+
+on:
+  push:
+    branches: [basil-jll-ci]
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # Ubuntu 24.04 runners restrict unprivileged user namespaces via AppArmor,
+      # which BinaryBuilder's sandbox needs. Without this the build dies early
+      # with an opaque sandbox error that looks like a source problem.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      # basil links libgfortran.so.5 from CompilerSupportLibraries at runtime,
+      # but the extracted tarball does not bundle it.
+      - name: Install runtime libs
+        run: sudo apt-get update && sudo apt-get install -y libgfortran5
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+
+      - name: Install BinaryBuilder
+        run: julia -e 'using Pkg; Pkg.add("BinaryBuilder")'
+
+      - name: Build x86_64-linux-gnu
+        working-directory: B/basil
+        run: julia --color=yes build_tarballs.jl --verbose x86_64-linux-gnu-libgfortran5-cxx11
+
+      # BinaryBuilder writes TWO tarballs: the product and `basil-logs.v...`.
+      # A glob like *.<triplet>.tar.gz matches both, and `basil-logs` sorts first
+      # ('-' < '.'), so tar would take the log archive as -f and treat the real
+      # product as a member name. Select the product explicitly.
+      - name: Unpack the product
+        working-directory: B/basil
+        run: |
+          ls -l products/
+          TARBALL=$(ls products/basil.v*.tar.gz)
+          test "$(wc -l <<< "$TARBALL")" -eq 1 || { echo "expected exactly one product tarball, got:"; echo "$TARBALL"; exit 1; }
+          echo "unpacking $TARBALL"
+          mkdir -p /tmp/bt
+          tar -xzf "$TARBALL" -C /tmp/bt
+          ls -l /tmp/bt/bin
+
+      - name: Verify all 9 products exist and sybilps is headless
+        run: |
+          for e in basil sybilps xpoly polyfix selvect mdcomp basinv circles corotate; do
+            test -x "/tmp/bt/bin/$e" || { echo "missing product: $e"; exit 1; }
+          done
+          echo "all 9 products present"
+          if ldd /tmp/bt/bin/sybilps | grep -qiE 'libX11|libXm|libXt'; then
+            echo "sybilps unexpectedly links X11"; exit 1
+          fi
+          echo "sybilps links no X11"
+
+      # The step that matters: does the solver actually solve?
+      - name: Smoke test (indenter INn3A0)
+        run: |
+          git clone --depth 1 https://github.com/wenrongcao/basil /tmp/basilsrc
+          mkdir -p /tmp/run/FD.sols /tmp/run/FD.out
+          cp /tmp/basilsrc/examples/indenter/INn3A0 /tmp/run/
+          cd /tmp/run
+          /tmp/bt/bin/basil INn3A0
+          echo "--- FD.sols ---"; ls -l FD.sols
+          echo "--- FD.out  ---"; ls -l FD.out
+          test -s FD.sols/INn3A0 || { echo "no solution file produced"; exit 1; }
+          grep -q "Job finished" FD.out/INn3A0.out || { echo "run did not finish cleanly"; exit 1; }
+          echo "smoke test passed"
